@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "t-string-sg",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-09",
+  "workers_dev": false,
+  "routes": [{ "pattern": "t.string.sg", "custom_domain": true }],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "t-string-sg",
+      "database_id": "REPLACE_AFTER_D1_CREATE",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "observability": { "enabled": true }
+}
