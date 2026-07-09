@@ -9,7 +9,7 @@
     {
       "binding": "DB",
       "database_name": "t-string-sg",
-      "database_id": "REPLACE_AFTER_D1_CREATE",
+      "database_id": "f526d25e-587a-49a2-aa78-8b04465c6a13",
       "migrations_dir": "migrations"
     }
   ],
