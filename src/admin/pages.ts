@@ -14,6 +14,14 @@ import { page, type Html } from './layout';
 
 export const admin = new Hono<{ Bindings: Env }>();
 
+// The dashboard is always dynamic (live click counts, freshly added links).
+// Never let a browser serve a stale admin page — otherwise a deploy's changes
+// silently don't show until a hard refresh.
+admin.use('*', async (c, next) => {
+  await next();
+  if (!c.res.headers.has('Cache-Control')) c.res.headers.set('Cache-Control', 'no-store');
+});
+
 const dateFmt = new Intl.DateTimeFormat('en-SG', {
   timeZone: 'Asia/Singapore',
   day: 'numeric',
