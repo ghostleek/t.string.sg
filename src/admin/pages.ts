@@ -8,6 +8,7 @@ import {
 } from '../auth';
 import { fillBuckets, getLink, listLinks, statsFor, type LinkWithCounts } from '../db';
 import type { Env } from '../env';
+import { qrSvg } from '../qr';
 import { barChart, breakdownTable } from './charts';
 import { page, type Html } from './layout';
 
@@ -82,6 +83,7 @@ function linkRow(l: LinkWithCounts, origin: string): Html {
     <td>
       <a href="/admin/links/${l.slug}"><strong>/${l.slug}</strong></a>
       <button class="linkish mut" data-copy="${short}" title="Copy short link">copy</button>
+      <a class="linkish mut" href="/admin/links/${l.slug}/qr.svg" target="_blank" title="QR code">qr</a>
     </td>
     <td><a class="target" href="${l.target_url}" rel="noreferrer" target="_blank">${l.target_url}</a>
       ${l.notes ? html`<div class="mut">${l.notes}</div>` : ''}</td>
@@ -157,7 +159,64 @@ admin.get('/', async (c) => {
   return c.html(page('Links · t.string.sg', shell(c, body)));
 });
 
+// --- QR code -------------------------------------------------------------
+
+// Encodes the short link (from the request origin) as an SVG. `?dl=1` downloads.
+admin.get('/links/:slug/qr.svg', async (c) => {
+  const slug = c.req.param('slug');
+  const link = await getLink(c.env.DB, slug);
+  if (!link) return c.notFound();
+  const origin = new URL(c.req.url).origin;
+  const svg = qrSvg(`${origin}/${link.slug}`);
+  c.header('Content-Type', 'image/svg+xml; charset=utf-8');
+  c.header('Cache-Control', 'no-store');
+  if (c.req.query('dl') === '1') {
+    c.header('Content-Disposition', `attachment; filename="${link.slug}.svg"`);
+  }
+  return c.body(svg);
+});
+
 // --- Per-link stats --------------------------------------------------------
+
+// Rasterize the inline QR to a PNG client-side. Any failure (older WebKit
+// canvas quirks, blocked toBlob, etc.) falls back to the server SVG download,
+// which works in every browser — the button is never a dead end.
+const STATS_JS = `
+document.getElementById('qr-png')?.addEventListener('click', (e) => {
+  const btn = e.currentTarget;
+  const svg = document.querySelector('#qr svg');
+  if (!svg) return;
+  const fallback = () => { window.location.href = '/admin/links/' + btn.dataset.slug + '/qr.svg?dl=1'; };
+  try {
+    const clone = svg.cloneNode(true);
+    const S = 1024;
+    clone.setAttribute('width', S); clone.setAttribute('height', S);
+    const xml = new XMLSerializer().serializeToString(clone);
+    const src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(xml)));
+    const img = new Image();
+    img.onerror = fallback;
+    img.onload = () => {
+      try {
+        const cv = document.createElement('canvas'); cv.width = S; cv.height = S;
+        const ctx = cv.getContext('2d');
+        if (!ctx) return fallback();
+        ctx.imageSmoothingEnabled = false;
+        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, S, S);
+        ctx.drawImage(img, 0, 0, S, S);
+        cv.toBlob((blob) => {
+          if (!blob) return fallback();
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = btn.dataset.slug + '.png';
+          a.click();
+          setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+        }, 'image/png');
+      } catch (err) { fallback(); }
+    };
+    img.src = src;
+  } catch (err) { fallback(); }
+});
+`;
 
 admin.get('/links/:slug', async (c) => {
   const link = await getLink(c.env.DB, c.req.param('slug'));
@@ -172,14 +231,26 @@ admin.get('/links/:slug', async (c) => {
   const dayLink = (d: number) =>
     html`<a class="${d === days ? 'on' : ''}" href="?days=${d}${bots ? '&bots=1' : ''}">${d}d</a>`;
 
+  const shortUrl = `${origin}/${link.slug}`;
+
   const body = html`
     <p><a href="/admin">← all links</a></p>
-    <div class="card">
-      <h2 style="font-size:18px">${origin}/${link.slug}
-        ${link.is_active ? '' : html` <span class="pill off">paused</span>`}</h2>
-      <div class="mut">→ <a href="${link.target_url}" rel="noreferrer" target="_blank">${link.target_url}</a></div>
-      ${link.notes ? html`<div class="mut">${link.notes}</div>` : ''}
-      <div class="mut">created ${fmtTs(link.created_at)}</div>
+    <div class="split">
+      <div class="card" style="flex:1">
+        <h2 style="font-size:18px">${shortUrl}
+          ${link.is_active ? '' : html` <span class="pill off">paused</span>`}</h2>
+        <div class="mut">→ <a href="${link.target_url}" rel="noreferrer" target="_blank">${link.target_url}</a></div>
+        ${link.notes ? html`<div class="mut">${link.notes}</div>` : ''}
+        <div class="mut">created ${fmtTs(link.created_at)}</div>
+      </div>
+      <div class="card qr-card">
+        <h3>QR code</h3>
+        <div class="qr" id="qr">${raw(qrSvg(shortUrl, { standalone: false }))}</div>
+        <div class="qr-actions">
+          <a class="btn" href="/admin/links/${link.slug}/qr.svg?dl=1">SVG</a>
+          <button class="btn" id="qr-png" data-slug="${link.slug}">PNG</button>
+        </div>
+      </div>
     </div>
     <div class="controls">
       <span class="seg">${dayLink(7)}${dayLink(30)}${dayLink(90)}</span>
@@ -203,6 +274,7 @@ admin.get('/links/:slug', async (c) => {
       ${breakdownTable('Device', stats.byDevice)}
       ${breakdownTable('Browser', stats.byBrowser)}
     </div>
+    <script>${raw(STATS_JS)}</script>
   `;
   return c.html(page(`/${link.slug} · t.string.sg`, shell(c, body)));
 });

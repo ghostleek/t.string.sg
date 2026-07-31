@@ -96,6 +96,14 @@ td.bd-n { width: 3.5em; text-align: right; font-variant-numeric: tabular-nums; p
 .chart line.grid { stroke: var(--grid); stroke-width: 1; }
 .chart line.base { stroke: var(--baseline); stroke-width: 1; }
 .empty { color: var(--muted); text-align: center; padding: 24px 0; }
+.split { display: flex; gap: 16px; align-items: stretch; flex-wrap: wrap; margin-bottom: 16px; }
+.split > .card { margin-bottom: 0; min-width: 0; }
+.split h2, .split .mut { overflow-wrap: anywhere; }
+.qr-card { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.qr { background: #fff; padding: 10px; border-radius: 8px; line-height: 0; }
+.qr svg { width: 148px; height: 148px; display: block; }
+.qr-actions { display: flex; gap: 8px; }
+.qr-actions .btn { padding: 4px 14px; font-size: 13px; text-decoration: none; }
 .login-wrap { max-width: 360px; margin: 15vh auto 0; padding: 0 16px; }
 .actions { display: flex; gap: 12px; align-items: baseline; }
 .actions form { display: inline; }
