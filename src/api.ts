@@ -104,8 +104,12 @@ api.post('/links/:slug/delete', async (c) => {
 
 api.post('/links/:slug/toggle', async (c) => {
   const link = await getLink(c.env.DB, c.req.param('slug'));
-  if (link) await updateLink(c.env.DB, link.slug, { is_active: link.is_active ? 0 : 1 });
-  return c.redirect('/admin', 303);
+  if (!link) return c.redirect('/admin', 303);
+  await updateLink(c.env.DB, link.slug, { is_active: link.is_active ? 0 : 1 });
+  // Tell the list page what just happened: pause is one tap with no confirm,
+  // so a mis-tap must be visible (and undoable) rather than silent.
+  const what = link.is_active ? 'paused' : 'resumed';
+  return c.redirect('/admin?' + what + '=' + encodeURIComponent(link.slug), 303);
 });
 
 api.get('/links/:slug/stats', async (c) => {
