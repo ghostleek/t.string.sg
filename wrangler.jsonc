@@ -4,6 +4,7 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-07-09",
   "workers_dev": false,
+  "preview_urls": true,
   "routes": [{ "pattern": "t.string.sg", "custom_domain": true }],
   "d1_databases": [
     {
