@@ -118,6 +118,16 @@ td.bd-n { width: 3.5em; text-align: right; font-variant-numeric: tabular-nums; p
 .chart line.grid { stroke: var(--grid); stroke-width: 1; }
 .chart line.base { stroke: var(--baseline); stroke-width: 1; }
 .chart-readout { min-height: 20px; margin-bottom: 4px; font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.chart.spark svg { height: 56px; }
+.spark-ticks { display: flex; justify-content: space-between; font-size: 11px; margin-top: 2px; }
+.ov-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.ov-head h2, .ov-head .controls { margin: 0; }
+.ov-top { display: grid; gap: 16px; grid-template-columns: 1fr; margin-bottom: 16px; }
+@media (min-width: 560px) { .ov-top { grid-template-columns: 200px 1fr; } }
+.tile .d { font-size: 12px; color: var(--ink-2); margin-top: 4px; }
+.tile .d.up { color: var(--good); }
+.tile .d.down { color: var(--danger); }
+.bd-pct { color: var(--muted); font-size: 11px; margin-left: 6px; }
 .empty { color: var(--muted); text-align: center; padding: 24px 0; }
 .split { display: flex; gap: 16px; align-items: stretch; flex-wrap: wrap; margin-bottom: 16px; }
 .split > .card { margin-bottom: 0; min-width: 0; }

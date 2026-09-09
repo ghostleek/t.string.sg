@@ -6,10 +6,19 @@ import {
   passwordMatches,
   setSessionCookie,
 } from '../auth';
-import { fillBuckets, getLink, listLinks, statsFor, type LinkWithCounts } from '../db';
+import {
+  fillBuckets,
+  getLink,
+  listLinks,
+  overviewFor,
+  pctChange,
+  statsFor,
+  type LinkWithCounts,
+  type Overview,
+} from '../db';
 import type { Env } from '../env';
 import { qrSvg } from '../qr';
-import { barChart, breakdownTable, CHART_W } from './charts';
+import { barChart, breakdownTable, CHART_W, sparkBars, tickLabel } from './charts';
 import { page, type Html } from './layout';
 
 export const admin = new Hono<{ Bindings: Env }>();
@@ -83,6 +92,81 @@ admin.post('/logout', (c) => {
   return c.redirect('/admin/login', 303);
 });
 
+// --- Overview --------------------------------------------------------------
+
+const regionNames = (() => {
+  try {
+    return new Intl.DisplayNames(['en'], { type: 'region' });
+  } catch {
+    return null;
+  }
+})();
+
+function countryLabel(code: string | null): string {
+  if (!code) return 'unknown';
+  try {
+    return regionNames?.of(code) ?? code;
+  } catch {
+    return code;
+  }
+}
+
+function deltaLine(cur: number, prev: number, days: number): Html {
+  const pct = pctChange(cur, prev);
+  if (pct === null) return html`<div class="d">nothing in the ${days} days before</div>`;
+  const cls = pct > 0 ? 'up' : pct < 0 ? 'down' : '';
+  return html`<div class="d ${cls}">${pct > 0 ? '+' : ''}${pct}% vs previous ${days} days <span class="mut">(${prev})</span></div>`;
+}
+
+// The feedback loop at the top of the dashboard: how the past week (or
+// month) went, which links carried it, and where the traffic came from.
+// Top-link rows link to the same window on the per-link page so the numbers
+// match after click-through.
+function overviewSection(o: Overview): Html {
+  const days = o.days;
+  const rangeLink = (d: number) =>
+    html`<a class="${d === days ? 'on' : ''}" href="/admin?range=${d}">${d}d</a>`;
+  const head = html`<div class="ov-head">
+    <h2>Past ${days} days <span class="mut">human clicks · Singapore time</span></h2>
+    <div class="controls"><span class="seg">${rangeLink(7)}${rangeLink(30)}</span></div>
+  </div>`;
+
+  if (o.clicks === 0) {
+    return html`<div class="card">${head}
+      <p class="empty">No human clicks in the past ${days} days${
+        o.prevClicks ? html` — ${o.prevClicks} in the ${days} days before` : ''
+      }. Share a link and check back.</p>
+    </div>`;
+  }
+
+  const series = fillBuckets(o.timeseries, days, 'day');
+  const first = series[0]!;
+  const last = series[series.length - 1]!;
+  const topLinks = o.topLinks.map((r) => ({ k: '/' + r.slug, n: r.n, href: `/admin/links/${r.slug}?days=${days}` }));
+  const countries = o.byCountry.map((r) => ({ k: countryLabel(r.k), n: r.n }));
+
+  return html`
+    ${head}
+    <div class="ov-top">
+      <div class="tile">
+        <div class="v">${o.clicks}</div>
+        <div class="l">human clicks</div>
+        ${deltaLine(o.clicks, o.prevClicks, days)}
+      </div>
+      <div class="tile">
+        <div class="l">per day</div>
+        ${sparkBars(series, `Human clicks per day, past ${days} days`)}
+        <div class="mut spark-ticks"><span>${tickLabel(first.bucket, 'day')}</span><span>${tickLabel(last.bucket, 'day')}</span></div>
+      </div>
+    </div>
+    <div class="grid2">
+      ${breakdownTable('Top links', topLinks, o.clicks)}
+      ${breakdownTable('Medium', o.byMedium, o.clicks)}
+      ${breakdownTable('Country', countries, o.clicks)}
+    </div>
+  `;
+}
+
 // --- Link list -----------------------------------------------------------
 
 // One <tr> per link. On phones the stylesheet turns each row into a stacked
@@ -132,7 +216,8 @@ document.addEventListener('submit', (e) => {
 `;
 
 admin.get('/', async (c) => {
-  const links = await listLinks(c.env.DB);
+  const range: 7 | 30 = c.req.query('range') === '30' ? 30 : 7;
+  const [links, ov] = await Promise.all([listLinks(c.env.DB), overviewFor(c.env.DB, range)]);
   const origin = new URL(c.req.url).origin;
   const created = c.req.query('created');
   const error = c.req.query('error');
@@ -154,6 +239,7 @@ admin.get('/', async (c) => {
             <form method="post" action="/api/links/${resumed}/toggle"><button class="linkish">undo</button></form></p>`
         : ''
     }
+    ${links.length ? overviewSection(ov) : ''}
     <div class="card">
       <h2>New link</h2>
       <form class="create" method="post" action="/api/links">

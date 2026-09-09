@@ -219,3 +219,76 @@ export function fillBuckets(
   }
   return out;
 }
+
+export interface Overview {
+  days: number;
+  since: number;
+  /** Human clicks in the window. */
+  clicks: number;
+  /** Human clicks in the equal window immediately before it. */
+  prevClicks: number;
+  timeseries: { bucket: string; n: number }[];
+  topLinks: { slug: string; n: number }[];
+  byMedium: BreakdownRow[];
+  byCountry: BreakdownRow[];
+}
+
+/**
+ * Dashboard overview across all links, humans only. The window is rolling
+ * (not calendar-aligned) so every number matches what statsFor(…, days)
+ * shows after clicking through to a link. Every WHERE predicate is on the raw
+ * ts column so idx_clicks_bot_ts can range-scan instead of reading history.
+ */
+export async function overviewFor(db: D1Database, days: 7 | 30 = 7): Promise<Overview> {
+  const now = Math.floor(Date.now() / 1000);
+  const since = now - days * 86400;
+  const prevSince = since - days * 86400;
+  const top = (col: string) =>
+    db
+      .prepare(
+        `SELECT ${col} AS k, COUNT(*) AS n FROM clicks WHERE is_bot = 0 AND ts >= ?1 GROUP BY ${col} ORDER BY n DESC, k LIMIT 5`
+      )
+      .bind(since);
+
+  const batchResults = await db.batch([
+    // Current and previous window from one index range.
+    db
+      .prepare(
+        'SELECT COALESCE(SUM(ts >= ?1), 0) AS cur, COALESCE(SUM(ts < ?1), 0) AS prev FROM clicks WHERE is_bot = 0 AND ts >= ?2'
+      )
+      .bind(since, prevSince),
+    db
+      .prepare(
+        `SELECT strftime('%Y-%m-%d', ts + ${TZ_OFFSET}, 'unixepoch') AS bucket, COUNT(*) AS n
+         FROM clicks WHERE is_bot = 0 AND ts >= ?1 GROUP BY bucket ORDER BY bucket`
+      )
+      .bind(since),
+    db
+      .prepare(
+        `SELECT l.slug, COUNT(*) AS n FROM clicks c JOIN links l ON l.id = c.link_id
+         WHERE c.is_bot = 0 AND c.ts >= ?1 GROUP BY l.id, l.slug ORDER BY n DESC, l.slug LIMIT 5`
+      )
+      .bind(since),
+    top('medium'),
+    top('country'),
+  ]);
+
+  const rows = (i: number) => batchResults[i]?.results ?? [];
+  const counts = rows(0)[0] as { cur: number; prev: number } | undefined;
+  return {
+    days,
+    since,
+    clicks: counts?.cur ?? 0,
+    prevClicks: counts?.prev ?? 0,
+    timeseries: rows(1) as { bucket: string; n: number }[],
+    topLinks: rows(2) as { slug: string; n: number }[],
+    byMedium: rows(3) as BreakdownRow[],
+    byCountry: rows(4) as BreakdownRow[],
+  };
+}
+
+/** Whole-percent change from prev to cur, or null when there is no baseline. */
+export function pctChange(cur: number, prev: number): number | null {
+  if (prev <= 0) return null;
+  return Math.round(((cur - prev) / prev) * 100);
+}
