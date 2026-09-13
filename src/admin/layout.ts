@@ -8,9 +8,10 @@ export type Html = HtmlEscapedString | Promise<HtmlEscapedString>;
 // use --series (categorical slot 1); text always wears ink tokens.
 //
 // Breakpoints: <=720px is the phone layout (links table -> stacked cards,
-// larger chart text), <=560px stacks the stats-page QR card under the link
-// info. `pointer: coarse` sizes touch-only controls; `hover: hover` guards
-// hover-only affordances so they don't stick after a tap.
+// larger chart text, collapsed optional form fields), <=560px stacks the
+// stats-page QR card under the link info. `pointer: coarse` sizes touch-only
+// controls; `hover: hover` guards hover-only affordances so they don't stick
+// after a tap.
 const CSS = `
 :root {
   color-scheme: light dark;
@@ -39,24 +40,42 @@ a { color: var(--series-strong); text-decoration: none; }
 .wrap { max-width: 980px; margin: 0 auto; padding: 24px 16px 64px; }
 header.top {
   display: flex; align-items: baseline; justify-content: space-between;
-  margin-bottom: 24px; gap: 12px; flex-wrap: wrap;
+  margin-bottom: 12px; gap: 12px; flex-wrap: wrap;
 }
 header.top h1 { font-size: 20px; margin: 0; }
 header.top h1 a { color: var(--ink); }
 header.top button.linkish { padding: 11px 8px; margin: -11px -8px; }
+/* Primary navigation: which view, as distinct from the segmented "which window". */
+.tabs { display: flex; border-bottom: 1px solid var(--grid); margin: 0 0 16px; }
+.tabs a { padding: 0 14px; line-height: 44px; color: var(--ink-2); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.tabs a[aria-current] { color: var(--ink); border-bottom-color: var(--series); font-weight: 600; }
+@media (hover: hover) { .tabs a:hover { text-decoration: none; color: var(--ink); } }
 .card {
   background: var(--surface); border: 1px solid var(--border);
   border-radius: 10px; padding: 16px; margin-bottom: 16px;
 }
 h2 { font-size: 15px; margin: 0 0 12px; }
 h3 { font-size: 13px; margin: 0 0 8px; color: var(--ink-2); font-weight: 600; }
-form.create { display: grid; gap: 8px; grid-template-columns: 1fr 160px 1fr auto; align-items: end; }
+/* Create form: URL + Create on the first row; slug/notes on the second (desktop)
+   or behind a disclosure (phones). */
+form.create { display: grid; gap: 8px; grid-template-columns: 1fr auto; align-items: end; }
+form.create .f-url { grid-column: 1; }
+form.create button.primary { grid-column: 2; }
+form.create details.more { grid-column: 1 / -1; }
 form.create label { display: block; font-size: 12px; color: var(--ink-2); margin-bottom: 2px; }
+.more-fields { display: grid; gap: 8px; grid-template-columns: 200px 1fr; align-items: start; }
+details.more > summary { cursor: pointer; color: var(--series-strong); font-size: 13px; list-style: none; padding: 8px 0; }
+details.more > summary::-webkit-details-marker { display: none; }
+details.more > summary::before { content: "▸ "; }
+details.more[open] > summary::before { content: "▾ "; }
+@media (min-width: 721px) { details.more > summary { display: none; } }
+.hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
 input[type=text], input[type=url], input[type=password] {
   width: 100%; padding: 7px 10px; border: 1px solid var(--baseline);
   border-radius: 6px; background: var(--page); color: var(--ink); font: inherit;
   font-size: 16px; min-height: 44px; /* 16px: iOS Safari zooms the page on focus below that */
 }
+input.bad { border-color: var(--danger); }
 button, .btn {
   padding: 7px 14px; border: 1px solid var(--baseline); border-radius: 6px;
   background: var(--surface); color: var(--ink); font: inherit; cursor: pointer;
@@ -67,7 +86,7 @@ button.linkish { border: none; background: none; color: var(--series-strong); }
    padding in layout so nothing moves. */
 .linkish { padding: 8px 4px; margin: -8px -4px; }
 button.danger { color: var(--danger); }
-button, .btn, .linkish, .seg a { -webkit-tap-highlight-color: transparent; }
+button, .btn, .linkish, .seg a, .tabs a { -webkit-tap-highlight-color: transparent; }
 :is(button, .btn, .linkish, .seg a):active { opacity: .7; }
 table.links { width: 100%; border-collapse: collapse; }
 table.links th {
@@ -92,17 +111,36 @@ th.num { text-align: right; }
 .flash.ok { background: color-mix(in srgb, var(--good) 12%, var(--surface)); color: var(--good); }
 .flash.err { background: color-mix(in srgb, var(--danger) 12%, var(--surface)); color: var(--danger); }
 .flash form { display: inline; margin-left: 8px; }
+.flash .tools { margin-left: 8px; }
+.flash .tools .linkish + .linkish { margin-left: 12px; }
+/* One-line feedback strip on the list page; the full report is behind it. */
+.strip {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+  padding: 10px 14px; margin-bottom: 16px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface); color: var(--ink-2); font-size: 13px; overflow-wrap: anywhere;
+}
+.strip strong { color: var(--ink); }
+.strip .up { color: var(--good); }
+.strip .down { color: var(--danger); }
+.strip-go { color: var(--series-strong); white-space: nowrap; font-weight: 600; }
+@media (hover: hover) { .strip:hover { text-decoration: none; border-color: var(--baseline); } }
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(140px, 100%), 1fr)); gap: 16px; margin-bottom: 16px; }
 .tile { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
 .tile .v { font-size: 28px; font-weight: 650; }
 .tile .l { font-size: 12px; color: var(--ink-2); }
+/* Overview KPI: number + sparkline side by side, delta underneath. */
+.tile.kpi { display: grid; gap: 4px 20px; grid-template-columns: auto 1fr; align-items: end; margin-bottom: 16px; }
+.kpi-n { grid-column: 1; }
+.kpi-s { grid-column: 2; min-width: 0; }
+.tile.kpi .d { grid-column: 1 / -1; }
 .controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; font-size: 13px; }
 .controls .seg { display: inline-flex; border: 1px solid var(--baseline); border-radius: 6px; overflow: hidden; }
 .controls .seg a { padding: 9px 14px; color: var(--ink-2); }
 .controls .seg a.on { background: var(--series); color: #fff; font-weight: 600; }
 .controls .seg a:hover { text-decoration: none; }
 @media (pointer: coarse) { .controls .seg a { padding: 0 16px; line-height: 44px; } }
-.grid2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr)); gap: 16px; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr)); gap: 16px; margin-bottom: 16px; }
+.grid2 > .card { margin-bottom: 0; }
 table.bd { width: 100%; border-collapse: collapse; font-size: 13px; }
 table.bd td { padding: 4px 0; }
 td.bd-k { width: 34%; overflow-wrap: anywhere; padding-right: 8px; }
@@ -122,8 +160,6 @@ td.bd-n { width: 3.5em; text-align: right; font-variant-numeric: tabular-nums; p
 .spark-ticks { display: flex; justify-content: space-between; font-size: 11px; margin-top: 2px; }
 .ov-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
 .ov-head h2, .ov-head .controls { margin: 0; }
-.ov-top { display: grid; gap: 16px; grid-template-columns: 1fr; margin-bottom: 16px; }
-@media (min-width: 560px) { .ov-top { grid-template-columns: 200px 1fr; } }
 .tile .d { font-size: 12px; color: var(--ink-2); margin-top: 4px; }
 .tile .d.up { color: var(--good); }
 .tile .d.down { color: var(--danger); }
@@ -144,7 +180,13 @@ td.bd-n { width: 3.5em; text-align: right; font-variant-numeric: tabular-nums; p
 
 /* ---- Phone layout ---------------------------------------------------- */
 @media (max-width: 720px) {
+  .tabs a { flex: 1; text-align: center; }
   form.create { grid-template-columns: 1fr; }
+  form.create button.primary { grid-column: 1; }
+  form.create details.more { grid-column: 1; order: 3; }
+  .more-fields { grid-template-columns: 1fr; }
+  .tile.kpi { grid-template-columns: 1fr; }
+  .kpi-s { grid-column: 1; }
   .chart text { font-size: 14px; }
   /* Links table -> one stacked card per link (same markup). */
   table.links, table.links tbody, table.links tr, table.links td { display: block; }

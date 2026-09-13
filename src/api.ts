@@ -43,16 +43,21 @@ api.get('/links', async (c) => {
 
 api.post('/links', async (c) => {
   const { input, isForm } = await readInput(c);
-  const fail = (msg: string, status: 400 | 409) =>
-    isForm ? c.redirect('/admin?error=' + encodeURIComponent(msg), 303) : c.json({ error: msg }, status);
+  // Forms bounce back to the create card with the draft intact and the
+  // offending field named, so nothing has to be retyped.
+  const fail = (msg: string, status: 400 | 409, field: 'url' | 'slug' | '' = '') => {
+    if (!isForm) return c.json({ error: msg }, status);
+    const q = new URLSearchParams({ error: msg, field, url: input.url ?? '', slug: input.slug ?? '', notes: input.notes ?? '' });
+    return c.redirect('/admin?' + q + '#new', 303);
+  };
 
   const target = validTargetUrl((input.url ?? '').trim());
-  if (!target) return fail('Enter a valid http(s) URL', 400);
+  if (!target) return fail('Enter a valid http(s) URL', 400, 'url');
 
   const notes = (input.notes ?? '').trim() || null;
   const wanted = (input.slug ?? '').trim();
   if (wanted && !isValidSlug(wanted)) {
-    return fail('Slug must be 1-64 chars of letters, digits, - or _, and not a reserved word', 400);
+    return fail('Slug must be 1-64 chars of letters, digits, - or _, and not a reserved word', 400, 'slug');
   }
 
   const candidates = wanted ? [wanted] : [randomSlug(6), randomSlug(6), randomSlug(6), randomSlug(7)];
@@ -65,7 +70,7 @@ api.post('/links', async (c) => {
       throw err;
     }
   }
-  return fail(wanted ? `Slug "${wanted}" is already taken` : 'Could not generate a unique slug, try again', 409);
+  return fail(wanted ? `Slug "${wanted}" is already taken` : 'Could not generate a unique slug, try again', 409, wanted ? 'slug' : '');
 });
 
 api.patch('/links/:slug', async (c) => {
