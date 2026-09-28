@@ -10,6 +10,8 @@ Discord, email, search, direct, …), referrer, country, device, OS, and browser
 `https://t.string.sg/admin` — password-protected (single `ADMIN_PASSWORD` Worker secret).
 
 - Create links with a custom slug or a random 6-char code
+- **Bulk add**: paste a Markdown table or CSV/TSV (format detected by a fixed rule), preview
+  each row's status, then create the new ones; existing slugs are never overwritten
 - Per-link stats: clicks over time, breakdowns by medium / referrer / country / device / browser
 - Link-preview crawlers (WhatsApp/Telegram/Slack unfurlers, Googlebot, …) are still
   redirected but flagged `is_bot=1` and excluded from stats; the **Bots** toggle shows them

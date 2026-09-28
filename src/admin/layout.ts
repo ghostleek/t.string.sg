@@ -138,6 +138,23 @@ td.bd-n { width: 3.5em; text-align: right; font-variant-numeric: tabular-nums; p
 .qr svg { width: 148px; height: 148px; display: block; }
 .qr-actions { display: flex; gap: 12px; }
 .qr-actions .btn { display: inline-flex; align-items: center; min-height: 44px; padding: 0 18px; font-size: 13px; text-decoration: none; }
+textarea {
+  width: 100%; padding: 8px 10px; border: 1px solid var(--baseline); border-radius: 6px;
+  background: var(--page); color: var(--ink); font: 16px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  resize: vertical; margin-bottom: 8px; white-space: pre; overflow-x: auto;
+}
+details.bulk-add summary { cursor: pointer; list-style-position: inside; }
+details.bulk-add summary h2 { display: inline; margin: 0; }
+details.bulk-add[open] summary { margin-bottom: 12px; }
+.scroll { overflow-x: auto; margin-bottom: 16px; }
+table.bulk { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.bulk th { text-align: left; font-size: 12px; color: var(--muted); font-weight: 500; padding: 6px 8px; border-bottom: 1px solid var(--grid); }
+table.bulk td { padding: 6px 8px; border-bottom: 1px solid var(--grid); vertical-align: baseline; }
+table.bulk td.target-cell { overflow-wrap: anywhere; min-width: 12em; }
+table.bulk td .pill { display: inline-block; margin-top: 4px; white-space: nowrap; }
+.bulk-actions { display: flex; gap: 12px; justify-content: flex-end; flex-wrap: wrap; }
+.bulk-actions button { min-height: 44px; }
+button:disabled { opacity: .5; cursor: default; }
 .login-wrap { max-width: 360px; margin: 15vh auto 0; padding: 0 16px; }
 .actions { display: flex; gap: 20px; align-items: baseline; }
 .actions form { display: inline; }

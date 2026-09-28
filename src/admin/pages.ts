@@ -6,7 +6,9 @@ import {
   passwordMatches,
   setSessionCookie,
 } from '../auth';
+import { FORMAT_LABEL, parseBulk, planRows, STATUS_LABEL, type PlannedRow } from '../bulk';
 import {
+  existingSlugs,
   fillBuckets,
   getLink,
   listLinks,
@@ -223,10 +225,19 @@ admin.get('/', async (c) => {
   const error = c.req.query('error');
   const paused = c.req.query('paused');
   const resumed = c.req.query('resumed');
+  const bulk = c.req.query('bulk');
+  const skipped = Number(c.req.query('skipped') ?? 0);
 
   const body = html`
     ${created ? html`<p class="flash ok">Created <strong>${origin}/${created}</strong></p>` : ''}
     ${error ? html`<p class="flash err">${error}</p>` : ''}
+    ${
+      bulk
+        ? html`<p class="flash ok">Created ${bulk} ${bulk === '1' ? 'link' : 'links'}${
+            skipped ? html` · ${skipped} skipped` : ''
+          }.</p>`
+        : ''
+    }
     ${
       paused
         ? html`<p class="flash ok">Paused <strong>/${paused}</strong> — visitors get a 404 until you resume it.
@@ -259,6 +270,16 @@ admin.get('/', async (c) => {
         <button class="primary">Create</button>
       </form>
     </div>
+    <details class="card bulk-add">
+      <summary><h2>Bulk add</h2></summary>
+      <form method="post" action="/admin/bulk">
+        ${bulkTextarea('')}
+        <p class="mut">Paste a Markdown table or CSV — a tab-separated paste from a spreadsheet works too.
+          Columns are short link, target URL, note: a header row picks them by name, otherwise they're read in that order.
+          A blank short link gets a random one; a ~struck-out~ short link is skipped. You'll see a preview before anything is created.</p>
+        <button class="primary">Preview</button>
+      </form>
+    </details>
     <div class="card">
       <h2>Links</h2>
       ${
@@ -273,6 +294,60 @@ admin.get('/', async (c) => {
     <script>${raw(LIST_JS)}</script>
   `;
   return c.html(page('Links · t.string.sg', shell(c, body)));
+});
+
+// --- Bulk add --------------------------------------------------------------
+
+function bulkTextarea(text: string): Html {
+  return html`<textarea name="text" rows="8" wrap="off" spellcheck="false" autocapitalize="none" autocorrect="off"
+    placeholder="| Short link | Target | Note |&#10;|---|---|---|&#10;| t.string.sg/demo | https://example.com | optional |">${text}</textarea>`;
+}
+
+function bulkRow(r: PlannedRow): Html {
+  const ok = r.status === 'new';
+  return html`<tr>
+    <td class="mut">${r.line}</td>
+    <td>
+      ${r.slug ? html`<strong>/${r.slug}</strong>` : html`<span class="mut">random</span>`}
+      <div><span class="pill${ok ? '' : ' off'}">${STATUS_LABEL[r.status]}</span></div>
+    </td>
+    <td class="target-cell">${r.url}${r.notes ? html`<div class="mut">${r.notes}</div>` : ''}</td>
+  </tr>`;
+}
+
+// Preview only: nothing is written here. The form re-posts the (possibly
+// edited) text either back here or to /api/links/bulk, which re-parses it.
+admin.post('/bulk', async (c) => {
+  const form = await c.req.parseBody();
+  const text = typeof form['text'] === 'string' ? form['text'] : '';
+  const parsed = parseBulk(text);
+  const plan = planRows(parsed.rows, await existingSlugs(c.env.DB, parsed.rows.map((r) => r.slug).filter(Boolean)));
+  const n = plan.filter((r) => r.status === 'new').length;
+
+  const body = html`
+    <p><a href="/admin">← all links</a></p>
+    <div class="card">
+      <h2>Bulk add · preview</h2>
+      ${parsed.error ? html`<p class="flash err">${parsed.error}</p>` : ''}
+      ${
+        plan.length
+          ? html`<p class="mut">Read as <strong>${FORMAT_LABEL[parsed.format]}</strong> · ${n} to create · ${plan.length - n} skipped</p>
+              <div class="scroll"><table class="bulk">
+                <thead><tr><th>Line</th><th>Short link</th><th>Target</th></tr></thead>
+                <tbody>${plan.map(bulkRow)}</tbody>
+              </table></div>`
+          : ''
+      }
+      <form method="post" action="/admin/bulk">
+        ${bulkTextarea(text)}
+        <div class="bulk-actions">
+          <button>Preview again</button>
+          <button class="primary" formaction="/api/links/bulk" ${n ? '' : 'disabled'}>Create ${n} ${n === 1 ? 'link' : 'links'}</button>
+        </div>
+      </form>
+    </div>
+  `;
+  return c.html(page('Bulk add · t.string.sg', shell(c, body)));
 });
 
 // --- QR code -------------------------------------------------------------
