@@ -239,6 +239,25 @@ export interface Overview {
  * shows after clicking through to a link. Every WHERE predicate is on the raw
  * ts column so idx_clicks_bot_ts can range-scan instead of reading history.
  */
+// Humans-only counts for a window and the equal window before it, from one
+// index range (idx_clicks_bot_ts).
+function stmtWindowCounts(db: D1Database, since: number, prevSince: number): D1PreparedStatement {
+  return db
+    .prepare(
+      'SELECT COALESCE(SUM(ts >= ?1), 0) AS cur, COALESCE(SUM(ts < ?1), 0) AS prev FROM clicks WHERE is_bot = 0 AND ts >= ?2'
+    )
+    .bind(since, prevSince);
+}
+
+function stmtTopLinks(db: D1Database, since: number, limit: number): D1PreparedStatement {
+  return db
+    .prepare(
+      `SELECT l.slug, COUNT(*) AS n FROM clicks c JOIN links l ON l.id = c.link_id
+       WHERE c.is_bot = 0 AND c.ts >= ?1 GROUP BY l.id, l.slug ORDER BY n DESC, l.slug LIMIT ${limit}`
+    )
+    .bind(since);
+}
+
 export async function overviewFor(db: D1Database, days: 7 | 30 = 7): Promise<Overview> {
   const now = Math.floor(Date.now() / 1000);
   const since = now - days * 86400;
@@ -251,24 +270,14 @@ export async function overviewFor(db: D1Database, days: 7 | 30 = 7): Promise<Ove
       .bind(since);
 
   const batchResults = await db.batch([
-    // Current and previous window from one index range.
-    db
-      .prepare(
-        'SELECT COALESCE(SUM(ts >= ?1), 0) AS cur, COALESCE(SUM(ts < ?1), 0) AS prev FROM clicks WHERE is_bot = 0 AND ts >= ?2'
-      )
-      .bind(since, prevSince),
+    stmtWindowCounts(db, since, prevSince),
     db
       .prepare(
         `SELECT strftime('%Y-%m-%d', ts + ${TZ_OFFSET}, 'unixepoch') AS bucket, COUNT(*) AS n
          FROM clicks WHERE is_bot = 0 AND ts >= ?1 GROUP BY bucket ORDER BY bucket`
       )
       .bind(since),
-    db
-      .prepare(
-        `SELECT l.slug, COUNT(*) AS n FROM clicks c JOIN links l ON l.id = c.link_id
-         WHERE c.is_bot = 0 AND c.ts >= ?1 GROUP BY l.id, l.slug ORDER BY n DESC, l.slug LIMIT 5`
-      )
-      .bind(since),
+    stmtTopLinks(db, since, 5),
     top('medium'),
     top('country'),
   ]);
@@ -291,4 +300,20 @@ export async function overviewFor(db: D1Database, days: 7 | 30 = 7): Promise<Ove
 export function pctChange(cur: number, prev: number): number | null {
   if (prev <= 0) return null;
   return Math.round(((cur - prev) / prev) * 100);
+}
+
+export interface WeekStrip {
+  clicks: number;
+  prevClicks: number;
+  top: { slug: string; n: number } | null;
+}
+
+/** The one-line "this week" summary on the list page: rolling 7 days, humans only. */
+export async function weekStrip(db: D1Database): Promise<WeekStrip> {
+  const now = Math.floor(Date.now() / 1000);
+  const since = now - 7 * 86400;
+  const r = await db.batch([stmtWindowCounts(db, since, since - 7 * 86400), stmtTopLinks(db, since, 1)]);
+  const counts = r[0]?.results[0] as { cur: number; prev: number } | undefined;
+  const top = (r[1]?.results[0] as { slug: string; n: number } | undefined) ?? null;
+  return { clicks: counts?.cur ?? 0, prevClicks: counts?.prev ?? 0, top };
 }

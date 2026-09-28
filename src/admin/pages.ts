@@ -13,13 +13,16 @@ import {
   overviewFor,
   pctChange,
   statsFor,
+  weekStrip,
   type LinkWithCounts,
   type Overview,
+  type WeekStrip,
 } from '../db';
 import type { Env } from '../env';
 import { qrSvg } from '../qr';
 import { barChart, breakdownTable, CHART_W, sparkBars, tickLabel } from './charts';
 import { page, type Html } from './layout';
+import { parseDays } from './query';
 
 export const admin = new Hono<{ Bindings: Env }>();
 
@@ -44,14 +47,54 @@ function fmtTs(ts: number | null): string {
   return ts ? dateFmt.format(new Date(ts * 1000)) : '—';
 }
 
-function shell(c: { req: { url: string } }, body: Html): Html {
+// --- Shell ---------------------------------------------------------------
+
+type Tab = 'links' | 'overview';
+
+// Behaviour every admin page needs, so it lives with the shell:
+// - copy buttons: on phones with a share sheet the button becomes "share" (the
+//   sheet includes Copy and reaches WhatsApp/Telegram in one tap); elsewhere
+//   it copies, with prompt() as the fallback where the clipboard API is absent
+// - data-confirm forms ask before submitting
+// - the create form's optional fields start collapsed on phones unless there
+//   is a draft or an error to show (no-JS fallback: the full form)
+const SHELL_JS = `
+(() => {
+  const canShare = matchMedia('(pointer: coarse)').matches && !!navigator.share;
+  if (canShare) document.querySelectorAll('[data-copy]').forEach((b) => {
+    b.textContent = 'share'; b.setAttribute('aria-label', 'Share short link');
+  });
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-copy]');
+    if (!b) return;
+    const url = b.dataset.copy;
+    if (canShare) { navigator.share({ url }).catch(() => {}); return; }
+    const flash = (msg) => { const t = b.textContent; b.textContent = msg; setTimeout(() => { b.textContent = t; }, 1200); };
+    const fallback = () => { window.prompt('Copy this link:', url); };
+    if (!navigator.clipboard) return fallback();
+    navigator.clipboard.writeText(url).then(() => flash('copied!'), fallback);
+  });
+  document.addEventListener('submit', (e) => {
+    const f = e.target.closest('[data-confirm]');
+    if (f && !confirm(f.dataset.confirm)) e.preventDefault();
+  });
+  const more = document.querySelector('details.more');
+  if (more && matchMedia('(max-width: 720px)').matches && !more.dataset.keepOpen) more.removeAttribute('open');
+})();
+`;
+
+function shell(c: { req: { url: string } }, body: Html, active: Tab): Html {
   const host = new URL(c.req.url).host;
+  const tab = (t: Tab, href: string, label: string) =>
+    html`<a href="${href}"${t === active ? raw(' aria-current="page"') : ''}>${label}</a>`;
   return html`<div class="wrap">
     <header class="top">
       <h1><a href="/admin">${host}</a> <span class="mut">link shortener</span></h1>
       <form method="post" action="/admin/logout"><button class="linkish">Log out</button></form>
     </header>
+    <nav class="tabs" aria-label="Admin">${tab('links', '/admin', 'Links')}${tab('overview', '/admin/overview', 'Overview')}</nav>
     ${body}
+    <script>${raw(SHELL_JS)}</script>
   </div>`;
 }
 
@@ -118,24 +161,23 @@ function deltaLine(cur: number, prev: number, days: number): Html {
   return html`<div class="d ${cls}">${pct > 0 ? '+' : ''}${pct}% vs previous ${days} days <span class="mut">(${prev})</span></div>`;
 }
 
-// The feedback loop at the top of the dashboard: how the past week (or
-// month) went, which links carried it, and where the traffic came from.
-// Top-link rows link to the same window on the per-link page so the numbers
-// match after click-through.
+// The feedback loop: how the past week (or month) went, which links carried
+// it, and where the traffic came from. Top-link rows link to the same window
+// on the per-link page so the numbers match after click-through.
 function overviewSection(o: Overview): Html {
   const days = o.days;
   const rangeLink = (d: number) =>
-    html`<a class="${d === days ? 'on' : ''}" href="/admin?range=${d}">${d}d</a>`;
+    html`<a class="${d === days ? 'on' : ''}" href="/admin/overview?days=${d}"${d === days ? raw(' aria-current="page"') : ''}>${d}d</a>`;
   const head = html`<div class="ov-head">
-    <h2>Past ${days} days <span class="mut">human clicks · Singapore time</span></h2>
-    <div class="controls"><span class="seg">${rangeLink(7)}${rangeLink(30)}</span></div>
+    <h2>Past ${days} days</h2>
+    <div class="controls"><span class="seg" role="group" aria-label="Time range">${rangeLink(7)}${rangeLink(30)}</span></div>
   </div>`;
 
   if (o.clicks === 0) {
     return html`<div class="card">${head}
       <p class="empty">No human clicks in the past ${days} days${
         o.prevClicks ? html` — ${o.prevClicks} in the ${days} days before` : ''
-      }. Share a link and check back.</p>
+      }. Share a link and check back. <a href="/admin">Links</a></p>
     </div>`;
   }
 
@@ -147,17 +189,16 @@ function overviewSection(o: Overview): Html {
 
   return html`
     ${head}
-    <div class="ov-top">
-      <div class="tile">
+    <div class="tile kpi">
+      <div class="kpi-n">
         <div class="v">${o.clicks}</div>
-        <div class="l">human clicks</div>
-        ${deltaLine(o.clicks, o.prevClicks, days)}
+        <div class="l">human clicks · Singapore time</div>
       </div>
-      <div class="tile">
-        <div class="l">per day</div>
+      <div class="kpi-s">
         ${sparkBars(series, `Human clicks per day, past ${days} days`)}
         <div class="mut spark-ticks"><span>${tickLabel(first.bucket, 'day')}</span><span>${tickLabel(last.bucket, 'day')}</span></div>
       </div>
+      ${deltaLine(o.clicks, o.prevClicks, days)}
     </div>
     <div class="grid2">
       ${breakdownTable('Top links', topLinks, o.clicks)}
@@ -167,7 +208,26 @@ function overviewSection(o: Overview): Html {
   `;
 }
 
+admin.get('/overview', async (c) => {
+  const days = parseDays(c.req.query('days'), [7, 30] as const, 7);
+  const ov = await overviewFor(c.env.DB, days);
+  return c.html(page('Overview · t.string.sg', shell(c, overviewSection(ov), 'overview')));
+});
+
 // --- Link list -----------------------------------------------------------
+
+// One line of feedback on the tool page; the full report is one tap away.
+function weekStripLine(w: WeekStrip): Html {
+  const pct = pctChange(w.clicks, w.prevClicks);
+  const delta =
+    pct === null ? '' : html` · <span class="${pct > 0 ? 'up' : pct < 0 ? 'down' : ''}">${pct > 0 ? '+' : ''}${pct}%</span>`;
+  return html`<a class="strip" href="/admin/overview">
+    <span><strong>This week</strong> · ${w.clicks} ${w.clicks === 1 ? 'click' : 'clicks'}${delta}${
+      w.top ? html` · top /${w.top.slug} (${w.top.n})` : ''
+    }</span>
+    <span class="strip-go">Overview →</span>
+  </a>`;
+}
 
 // One <tr> per link. On phones the stylesheet turns each row into a stacked
 // card: data-label cells get an inline caption, and the actions become
@@ -197,36 +257,26 @@ function linkRow(l: LinkWithCounts, origin: string): Html {
   </tr>`;
 }
 
-const LIST_JS = `
-document.addEventListener('click', (e) => {
-  const b = e.target.closest('[data-copy]');
-  if (!b) return;
-  const url = b.dataset.copy;
-  const flash = (msg) => { const t = b.textContent; b.textContent = msg; setTimeout(() => { b.textContent = t; }, 1200); };
-  // prompt() pre-selects its text everywhere, so a long-press copy still works
-  // where the async clipboard is unavailable (in-app webviews, plain http).
-  const fallback = () => { window.prompt('Copy this link:', url); };
-  if (!navigator.clipboard) return fallback();
-  navigator.clipboard.writeText(url).then(() => flash('copied!'), fallback);
-});
-document.addEventListener('submit', (e) => {
-  const f = e.target.closest('[data-confirm]');
-  if (f && !confirm(f.dataset.confirm)) e.preventDefault();
-});
-`;
-
 admin.get('/', async (c) => {
-  const range: 7 | 30 = c.req.query('range') === '30' ? 30 : 7;
-  const [links, ov] = await Promise.all([listLinks(c.env.DB), overviewFor(c.env.DB, range)]);
+  const [links, week] = await Promise.all([listLinks(c.env.DB), weekStrip(c.env.DB)]);
   const origin = new URL(c.req.url).origin;
-  const created = c.req.query('created');
-  const error = c.req.query('error');
-  const paused = c.req.query('paused');
-  const resumed = c.req.query('resumed');
+  const q = (k: string) => c.req.query(k);
+  const created = q('created');
+  const error = q('error');
+  const field = q('field');
+  const paused = q('paused');
+  const resumed = q('resumed');
+  // A rejected submit bounces back here with the draft, so nothing is retyped.
+  const draft = { url: q('url') ?? '', slug: q('slug') ?? '', notes: q('notes') ?? '' };
+  const keepMoreOpen = Boolean(draft.slug || draft.notes || field === 'slug');
 
   const body = html`
-    ${created ? html`<p class="flash ok">Created <strong>${origin}/${created}</strong></p>` : ''}
-    ${error ? html`<p class="flash err">${error}</p>` : ''}
+    ${
+      created
+        ? html`<p class="flash ok">Created <strong>${origin}/${created}</strong>
+            <span class="tools"><button class="linkish" data-copy="${origin}/${created}" aria-label="Copy short link">copy</button><a class="linkish" href="/admin/links/${created}#qr">QR &amp; stats</a></span></p>`
+        : ''
+    }
     ${
       paused
         ? html`<p class="flash ok">Paused <strong>/${paused}</strong> — visitors get a 404 until you resume it.
@@ -239,28 +289,37 @@ admin.get('/', async (c) => {
             <form method="post" action="/api/links/${resumed}/toggle"><button class="linkish">undo</button></form></p>`
         : ''
     }
-    ${links.length ? overviewSection(ov) : ''}
-    <div class="card">
+    ${links.length ? weekStripLine(week) : ''}
+    <div class="card" id="new">
       <h2>New link</h2>
+      ${error ? html`<p class="flash err">${error}</p>` : ''}
       <form class="create" method="post" action="/api/links">
-        <div>
+        <div class="f-url">
           <label for="f-url">Target URL</label>
-          <input id="f-url" type="url" name="url" placeholder="https://example.com/page" required />
-        </div>
-        <div>
-          <label for="f-slug">Slug <span class="mut">(optional)</span></label>
-          <input id="f-slug" type="text" name="slug" placeholder="random" pattern="[A-Za-z0-9_-]{1,64}"
-            autocapitalize="none" autocorrect="off" spellcheck="false" />
-        </div>
-        <div>
-          <label for="f-notes">Notes <span class="mut">(optional)</span></label>
-          <input id="f-notes" type="text" name="notes" placeholder="what/where this is shared" />
+          <input id="f-url" type="url" name="url" placeholder="https://example.com/page" required
+            value="${draft.url}" class="${field === 'url' ? 'bad' : ''}" />
         </div>
         <button class="primary">Create</button>
+        <details class="more" open${keepMoreOpen ? raw(' data-keep-open="1"') : ''}>
+          <summary>Custom slug / notes</summary>
+          <div class="more-fields">
+            <div>
+              <label for="f-slug">Slug <span class="mut">(optional)</span></label>
+              <input id="f-slug" type="text" name="slug" placeholder="random" pattern="[A-Za-z0-9_-]{1,64}"
+                autocapitalize="none" autocorrect="off" spellcheck="false"
+                value="${draft.slug}" class="${field === 'slug' ? 'bad' : ''}" />
+              <div class="hint">Letters, digits, - or _ (1–64). Case-sensitive.</div>
+            </div>
+            <div>
+              <label for="f-notes">Notes <span class="mut">(optional)</span></label>
+              <input id="f-notes" type="text" name="notes" placeholder="what/where this is shared" value="${draft.notes}" />
+            </div>
+          </div>
+        </details>
       </form>
     </div>
     <div class="card">
-      <h2>Links</h2>
+      <h2>Links${links.length ? html` <span class="mut">${links.length}</span>` : ''}</h2>
       ${
         links.length === 0
           ? html`<p class="empty">No links yet — create one above.</p>`
@@ -270,9 +329,8 @@ admin.get('/', async (c) => {
             </table>`
       }
     </div>
-    <script>${raw(LIST_JS)}</script>
   `;
-  return c.html(page('Links · t.string.sg', shell(c, body)));
+  return c.html(page('Links · t.string.sg', shell(c, body, 'links')));
 });
 
 // --- QR code -------------------------------------------------------------
@@ -382,7 +440,7 @@ admin.get('/links/:slug', async (c) => {
   const link = await getLink(c.env.DB, c.req.param('slug'));
   if (!link) return c.notFound();
 
-  const days = [7, 30, 90].includes(Number(c.req.query('days'))) ? Number(c.req.query('days')) : 30;
+  const days = parseDays(c.req.query('days'), [7, 30, 90] as const, 30);
   const bots = c.req.query('bots') === '1';
   const stats = await statsFor(c.env.DB, link.id, days, bots);
   const series = fillBuckets(stats.timeseries, days, stats.bucket);
@@ -436,5 +494,5 @@ admin.get('/links/:slug', async (c) => {
     </div>
     <script>${raw(STATS_JS)}</script>
   `;
-  return c.html(page(`/${link.slug} · t.string.sg`, shell(c, body)));
+  return c.html(page(`/${link.slug} · t.string.sg`, shell(c, body, 'links')));
 });
