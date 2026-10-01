@@ -7,12 +7,12 @@
       "Bash(npx vitest run:*)"
     ],
     "deny": [
-      "Bash(npm run deploy)",
-      "Bash(npm run db:migrate:remote)",
-      "Bash(npx wrangler deploy:*)",
-      "Bash(npx wrangler secret:*)",
-      "Bash(npx wrangler d1 execute t-string-sg --remote:*)",
-      "Bash(npx wrangler d1 migrations apply t-string-sg --remote:*)",
+      "Bash(npm run deploy *)",
+      "Bash(npm run db:migrate:remote *)",
+      "Bash(npx wrangler deploy *)",
+      "Bash(npx wrangler secret *)",
+      "Bash(npx wrangler d1 execute * --remote *)",
+      "Bash(npx wrangler d1 migrations apply * --remote *)",
       "Read(./.dev.vars)"
     ]
   },
@@ -20,7 +20,21 @@
     "SessionStart": [
       {
         "hooks": [
-          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session-start.sh" }
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session-start.sh"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/guard-prod.sh"
+          }
         ]
       }
     ],
@@ -28,7 +42,10 @@
       {
         "matcher": "Edit|Write|MultiEdit",
         "hooks": [
-          { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/typecheck-on-edit.sh" }
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/typecheck-on-edit.sh"
+          }
         ]
       }
     ]

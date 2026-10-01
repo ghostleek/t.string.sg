@@ -15,17 +15,23 @@ is what an agent needs to work in the repo without breaking anything.
 ## Where things live
 
 - `src/detect.ts` — medium classification. Pure; any change needs a case in `test/detect.test.ts`.
-- `src/db.ts` — all SQL. No SQL anywhere else.
+- `src/db.ts` — all application SQL; route handlers never build queries.
+  (`migrations/` and `seeds/` are SQL files by design; this rule doesn't cover them.)
 - `src/api.ts` — JSON/form routes under `/api`. `src/admin/` — server-rendered dashboard.
 - `migrations/` — schema only, append-only, numbered. Never edit an applied migration.
 - `seeds/` — one-off data batches (`INSERT … ON CONFLICT(slug) DO NOTHING`), not migrations.
 
 ## Production is out of reach, on purpose
 
-Links live in the production D1 database, not in this repo. Agents have no Cloudflare
-credentials, and `.claude/settings.json` denies `wrangler deploy` and any `--remote`
-wrangler command. To add links: write a seed file or use the dashboard's bulk add,
-then tell the user the exact command to run themselves.
+Links live in the production D1 database, not in this repo. The real boundary is that
+agents have no Cloudflare credentials. On top of that, two guardrails stop accidents:
+deny rules in `.claude/settings.json`, and `.claude/hooks/guard-prod.sh`, which blocks
+any shell command that deploys, touches secrets, uses `--remote`, or reads `.dev.vars`
+(cases in `test/guard-prod.test.ts`). It matches text, so it can misfire on a commit
+message that mentions those words; put such text in a file instead.
+
+To add links: write a seed file or use the dashboard's bulk add, then tell the user
+the exact command to run themselves.
 
 ## Conventions
 
