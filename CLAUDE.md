@@ -10,7 +10,8 @@ is what an agent needs to work in the repo without breaking anything.
   (PostToolUse hook in `.claude/settings.json`).
 - `npm run db:migrate:local` then `npm run dev` — local Worker on :8787 with a local D1.
   Log in with the password from `.dev.vars` (gitignored; create it with
-  `ADMIN_PASSWORD=...` if missing).
+  `ADMIN_PASSWORD=...` if missing). Use a throwaway local value, never the production
+  password: agents can run shell commands here, so treat this file as readable by them.
 
 ## Where things live
 
@@ -26,7 +27,8 @@ is what an agent needs to work in the repo without breaking anything.
 Links live in the production D1 database, not in this repo. The real boundary is that
 agents have no Cloudflare credentials. On top of that, two guardrails stop accidents:
 deny rules in `.claude/settings.json`, and `.claude/hooks/guard-prod.sh`, which blocks
-any shell command that deploys, touches secrets, uses `--remote`, or reads `.dev.vars`
+deploy/migrate npm scripts, every `wrangler` command except `wrangler dev` and `--local`
+ones (many act on Cloudflare without `--remote`), and plain reads of `.dev.vars`
 (cases in `test/guard-prod.test.ts`). It matches text, so it can misfire on a commit
 message that mentions those words; put such text in a file instead.
 

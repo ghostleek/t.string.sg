@@ -14,10 +14,16 @@ block() {
   exit 2
 }
 
-# Any wrangler invocation that deploys, manages secrets, or targets remote resources.
-if grep -Eq '(^|[^[:alnum:]_-])wrangler([^[:alnum:]_-]|$)' <<<"$cmd" &&
-   grep -Eq '(^|[[:space:]])(deploy|publish|secret|rollback|versions)([[:space:]]|$)|--remote([[:space:]=]|$)' <<<"$cmd"; then
-  block "wrangler deploy/secret/--remote command"
+# Wrangler is allowlisted, not denylisted: many subcommands (d1 delete, kv, r2, queues…)
+# act on Cloudflare by default without any --remote flag, so naming the dangerous ones
+# can never be complete. Only local dev, --local commands, and help/version pass.
+if grep -Eq '(^|[^[:alnum:]_-])wrangler([^[:alnum:]_-]|$)' <<<"$cmd"; then
+  if grep -Eq -- '--remote([[:space:]=]|$)' <<<"$cmd"; then
+    block "wrangler --remote command"
+  fi
+  if ! grep -Eq -- 'wrangler[[:space:]]+dev([[:space:]]|$)|--local([[:space:]=]|$)|wrangler[[:space:]]+(--version|-v|--help|-h)([[:space:]]|$)' <<<"$cmd"; then
+    block "wrangler command that acts on Cloudflare (only 'wrangler dev' and --local commands are allowed)"
+  fi
 fi
 
 # npm scripts that wrap production operations, however they're invoked.
@@ -26,7 +32,9 @@ if grep -Eq '(^|[^[:alnum:]_:-])(deploy|db:migrate:remote)([^[:alnum:]_:-]|$)' <
   block "npm script that deploys or migrates production"
 fi
 
-# The local admin password, read by any shell route (cat, grep, node, globs).
+# The local admin password. Best effort only: a path built at runtime gets past a text
+# match, so the real protection is that .dev.vars holds a throwaway local password,
+# never the production one (CLAUDE.md).
 if grep -Eq '\.dev(\.|\*|\?|\[)' <<<"$cmd"; then
   block "reads .dev.vars (local secrets)"
 fi

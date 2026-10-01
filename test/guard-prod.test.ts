@@ -24,6 +24,11 @@ describe('guard-prod hook', () => {
     'npm exec wrangler d1 execute t-string-sg --command "SELECT 1" --remote',
     'npx wrangler d1 execute t-string-sg --remote --command "DELETE FROM links"',
     'npx wrangler d1 migrations apply t-string-sg --remote',
+    // Remote by default, no --remote flag needed: why wrangler is allowlisted.
+    'npx wrangler d1 delete t-string-sg --skip-confirmation',
+    'npx wrangler d1 list',
+    'npx wrangler kv key put foo bar --namespace-id abc',
+    'npx wrangler dev --remote',
     'cat .dev.vars',
     'node -e "require(\'fs\').readFileSync(\'.dev.vars\')"',
     'cat .dev*',
@@ -40,6 +45,7 @@ describe('guard-prod hook', () => {
     'npm run db:migrate:local',
     'npx wrangler d1 execute t-string-sg --local --command "SELECT 1"',
     'npx wrangler d1 migrations apply t-string-sg --local',
+    'npx wrangler --version',
     'git status',
     'npx vitest run test/detect.test.ts',
   ])('allows: %s', (cmd) => {
