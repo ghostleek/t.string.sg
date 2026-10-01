@@ -27,9 +27,10 @@ is what an agent needs to work in the repo without breaking anything.
 Links live in the production D1 database, not in this repo. The real boundary is that
 agents have no Cloudflare credentials. On top of that, two guardrails stop accidents:
 deny rules in `.claude/settings.json`, and `.claude/hooks/guard-prod.sh`, which blocks
-deploy/migrate npm scripts, every `wrangler` command except `wrangler dev` and `--local`
-ones (many act on Cloudflare without `--remote`), and plain reads of `.dev.vars`
-(cases in `test/guard-prod.test.ts`). It matches text, so it can misfire on a commit
+deploy/migrate npm scripts, every `wrangler` call except `wrangler dev` and
+`wrangler d1 execute|migrations … --local` (many act on Cloudflare without `--remote`;
+`.claude/hooks/wrangler-check.mjs` parses the command like a shell to check each call),
+and plain reads of `.dev.vars` (cases in `test/guard-prod.test.ts`). It matches text, so it can misfire on a commit
 message that mentions those words; put such text in a file instead.
 
 To add links: write a seed file or use the dashboard's bulk add, then tell the user

@@ -16,13 +16,11 @@ block() {
 
 # Wrangler is allowlisted, not denylisted: many subcommands (d1 delete, kv, r2, queues…)
 # act on Cloudflare by default without any --remote flag, so naming the dangerous ones
-# can never be complete. Only local dev, --local commands, and help/version pass.
-if grep -Eq '(^|[^[:alnum:]_-])wrangler([^[:alnum:]_-]|$)' <<<"$cmd"; then
-  if grep -Eq -- '--remote([[:space:]=]|$)' <<<"$cmd"; then
-    block "wrangler --remote command"
-  fi
-  if ! grep -Eq -- 'wrangler[[:space:]]+dev([[:space:]]|$)|--local([[:space:]=]|$)|wrangler[[:space:]]+(--version|-v|--help|-h)([[:space:]]|$)' <<<"$cmd"; then
-    block "wrangler command that acts on Cloudflare (only 'wrangler dev' and --local commands are allowed)"
+# can never be complete. wrangler-check.mjs parses the command like a shell and checks
+# each wrangler call against the verified local forms.
+if grep -Eq '(^|[^[:alnum:]_-])wrangler([^[:alnum:]_.-]|$)' <<<"$cmd"; then
+  if ! why=$(node "$(dirname "$0")/wrangler-check.mjs" <<<"$cmd"); then
+    block "wrangler command that can act on Cloudflare: $why (only 'wrangler dev' and 'wrangler d1 execute|migrations … --local' are allowed)"
   fi
 fi
 

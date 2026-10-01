@@ -29,6 +29,18 @@ describe('guard-prod hook', () => {
     'npx wrangler d1 list',
     'npx wrangler kv key put foo bar --namespace-id abc',
     'npx wrangler dev --remote',
+    // Allowed-looking words that aren't real flags of the dangerous call.
+    'npx wrangler --version; npx wrangler d1 delete t-string-sg',
+    'npx wrangler --version ; npx wrangler d1 delete t-string-sg',
+    'npx wrangler --version && npx wrangler d1 delete t-string-sg',
+    `npx wrangler d1 execute t-string-sg --command "SELECT '--local'"`,
+    'npx wrangler d1 execute t-string-sg --command "SELECT 1" # --local',
+    'npx wrangler d1 delete t-string-sg --local',
+    'npx wrangler d1 execute t-string-sg --local --remote --command "SELECT 1"',
+    // Calls hidden inside strings or substitutions.
+    'bash -c "npx wrangler d1 delete t-string-sg"',
+    'echo "$(npx wrangler d1 list)"',
+    'echo $(npx wrangler d1 list)',
     'cat .dev.vars',
     'node -e "require(\'fs\').readFileSync(\'.dev.vars\')"',
     'cat .dev*',
@@ -46,6 +58,9 @@ describe('guard-prod hook', () => {
     'npx wrangler d1 execute t-string-sg --local --command "SELECT 1"',
     'npx wrangler d1 migrations apply t-string-sg --local',
     'npx wrangler --version',
+    'npx wrangler dev --port 8787 && echo ready',
+    'npm run db:migrate:local && npx wrangler d1 execute t-string-sg --local --command "SELECT 1"',
+    'cat wrangler.jsonc',
     'git status',
     'npx vitest run test/detect.test.ts',
   ])('allows: %s', (cmd) => {
