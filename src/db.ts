@@ -137,12 +137,12 @@ export async function createLinks(
   rows: { slug: string; target_url: string; notes: string | null }[]
 ): Promise<string[]> {
   if (rows.length === 0) return [];
-  const stmt = db.prepare(
-    `INSERT INTO links (slug, target_url, notes, created_at)
-     VALUES (?1, ?2, ?3, unixepoch()) ON CONFLICT(slug) DO NOTHING`
-  );
-  const res = await db.batch(rows.map((r) => stmt.bind(r.slug, r.target_url, r.notes)));
-  return rows.filter((_, i) => res[i]!.meta.changes > 0).map((r) => r.slug);
+  const created: boolean[] = [];
+  for (let i = 0; i < rows.length; i += 100) {
+    const batch = await db.batch(rows.slice(i, i + 100).map((r) => stmt.bind(r.slug, r.target_url, r.notes)));
+    created.push(...batch.map((r) => r.meta.changes > 0));
+  }
+  return rows.filter((_, i) => created[i]).map((r) => r.slug);
 }
 
 export async function updateLink(
