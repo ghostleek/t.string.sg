@@ -114,6 +114,41 @@ export async function createLink(
   return row;
 }
 
+// Which of `slugs` already exist. Chunked to stay under D1's 100 bound
+// parameters per statement.
+export async function existingSlugs(db: D1Database, slugs: string[]): Promise<Set<string>> {
+  const out = new Set<string>();
+  for (let i = 0; i < slugs.length; i += 100) {
+    const chunk = slugs.slice(i, i + 100);
+    const ph = chunk.map((_, j) => `?${j + 1}`).join(',');
+    const { results } = await db
+      .prepare(`SELECT slug FROM links WHERE slug IN (${ph})`)
+      .bind(...chunk)
+      .all<{ slug: string }>();
+    for (const r of results) out.add(r.slug);
+  }
+  return out;
+}
+
+// Inserts in one batch; a slug taken meanwhile is skipped, never overwritten.
+// Returns the slugs actually created.
+export async function createLinks(
+  db: D1Database,
+  rows: { slug: string; target_url: string; notes: string | null }[]
+): Promise<string[]> {
+  if (rows.length === 0) return [];
+  const stmt = db.prepare(
+    `INSERT INTO links (slug, target_url, notes, created_at)
+     VALUES (?1, ?2, ?3, unixepoch()) ON CONFLICT(slug) DO NOTHING`
+  );
+  const created: boolean[] = [];
+  for (let i = 0; i < rows.length; i += 100) {
+    const batch = await db.batch(rows.slice(i, i + 100).map((r) => stmt.bind(r.slug, r.target_url, r.notes)));
+    created.push(...batch.map((r) => r.meta.changes > 0));
+  }
+  return rows.filter((_, i) => created[i]).map((r) => r.slug);
+}
+
 export async function updateLink(
   db: D1Database,
   slug: string,

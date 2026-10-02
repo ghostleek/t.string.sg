@@ -1,7 +1,8 @@
 import { Hono } from 'hono';
-import { createLink, deleteLink, getLink, listLinks, statsFor, updateLink } from './db';
+import { parseBulk, planRows } from './bulk';
+import { createLink, createLinks, deleteLink, existingSlugs, getLink, listLinks, statsFor, updateLink } from './db';
 import type { Env } from './env';
-import { isValidSlug, randomSlug } from './slugs';
+import { isValidSlug, randomSlug, validTargetUrl } from './slugs';
 
 export const api = new Hono<{ Bindings: Env }>();
 
@@ -9,16 +10,6 @@ interface LinkInput {
   url?: string;
   slug?: string;
   notes?: string;
-}
-
-function validTargetUrl(raw: string): string | null {
-  try {
-    const u = new URL(raw);
-    if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
-    return u.href;
-  } catch {
-    return null;
-  }
 }
 
 async function readInput(c: { req: { header: (n: string) => string | undefined; json: () => Promise<unknown>; parseBody: () => Promise<Record<string, unknown>> } }): Promise<{ input: LinkInput; isForm: boolean }> {
@@ -71,6 +62,21 @@ api.post('/links', async (c) => {
     }
   }
   return fail(wanted ? `Slug "${wanted}" is already taken` : 'Could not generate a unique slug, try again', 409, wanted ? 'slug' : '');
+});
+
+// Bulk create from the dashboard's paste box. Re-parses the same text the
+// preview showed, so only rows the preview marked "new" are created.
+api.post('/links/bulk', async (c) => {
+  const body = await c.req.parseBody();
+  const text = typeof body['text'] === 'string' ? body['text'] : '';
+  const parsed = parseBulk(text);
+  if (parsed.error) return c.redirect('/admin?error=' + encodeURIComponent(parsed.error), 303);
+  const plan = planRows(parsed.rows, await existingSlugs(c.env.DB, parsed.rows.map((r) => r.slug).filter(Boolean)));
+  const toCreate = plan
+    .filter((r) => r.status === 'new')
+    .map((r) => ({ slug: r.slug || randomSlug(6), target_url: r.target!, notes: r.notes }));
+  const created = await createLinks(c.env.DB, toCreate);
+  return c.redirect(`/admin?bulk=${created.length}&skipped=${plan.length - created.length}`, 303);
 });
 
 api.patch('/links/:slug', async (c) => {

@@ -25,3 +25,13 @@ export function randomSlug(length = 6): string {
 export function isValidSlug(slug: string): boolean {
   return SLUG_RE.test(slug) && !RESERVED.has(slug.toLowerCase());
 }
+
+export function validTargetUrl(raw: string): string | null {
+  try {
+    const u = new URL(raw);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+    return u.href;
+  } catch {
+    return null;
+  }
+}
