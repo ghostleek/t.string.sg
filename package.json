@@ -9,6 +9,7 @@
     "deploy": "wrangler deploy",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm test",
     "db:migrate:local": "wrangler d1 migrations apply t-string-sg --local",
     "db:migrate:remote": "wrangler d1 migrations apply t-string-sg --remote"
   },
